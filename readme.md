@@ -296,6 +296,29 @@ helm install fluentd bitnami/fluentd
 ```
 #### Fluentd config map - fluentd-forwarder-cm
 
+### Log Item in log file
+```json
+{
+    "app": "JavaApp",
+    "time": "2021-01-08T01:12:20.154+00:00",
+    "logger": "com.example.App",
+    "level": "INFO",
+    "class": "com.example.App",
+    "method": "init",
+    "file": "App.java",
+    "line": 23,
+    "thread": "main",
+    "msg": "I am a Java app"
+}
+
+{
+    "level": 30,
+    "time": "2021-01-08T01:11:50.597Z",
+    "pid": 1,
+    "hostname": "node-app-6cdf8df6f6-nfhxl",
+    "msg": "app listening on port 3000!"
+}
+```
 ```yaml
 kind: ConfigMap
 apiVersion: v1
@@ -405,5 +428,20 @@ GET /java-app-logs/_search
 {
   "query": {"match_all": {}}
 }
+
+ ```
+ # Clean
+ ```
+helm delete elasticsearch 
+helm delete kibana 
+helm delete fluentd 
+kubectl delete fluentd-config.yaml
+
+kubectl delete pvc elasticsearch-master-elasticsearch-master-0
+kubectl delete -f persistent-volume.yaml
+
+kubectl delete -f java-app/deployment.yaml
+kubectl delete -f node-app/deployment.yaml
+
 
  ```
