@@ -294,9 +294,8 @@ helm repo add bitnami https://charts.bitnami.com/bitnami
 helm install fluentd bitnami/fluentd
 
 ```
-#### Fluentd config map - fluentd-forwarder-cm
 
-### Log Item in log file
+#### Log Item in log file
 ```json
 {
     "app": "JavaApp",
@@ -319,6 +318,8 @@ helm install fluentd bitnami/fluentd
     "msg": "app listening on port 3000!"
 }
 ```
+#### Fluentd config map - fluentd-forwarder-cm
+
 ```yaml
 kind: ConfigMap
 apiVersion: v1
