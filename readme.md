@@ -279,11 +279,13 @@ spec:
               servicePort: 5601
 
 ```
+add record to `/etc/hosts`
+```
+127.0.0.1       kibana.dev
+```
 
 https://kibana.dev/
 `thisisunsafe`
-
-
 
 
 ### install Fluentd
