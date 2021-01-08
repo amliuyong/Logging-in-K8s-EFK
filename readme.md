@@ -442,6 +442,4 @@ kubectl delete -f persistent-volume.yaml
 
 kubectl delete -f java-app/deployment.yaml
 kubectl delete -f node-app/deployment.yaml
-
-
  ```
