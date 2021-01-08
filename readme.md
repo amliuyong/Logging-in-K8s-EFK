@@ -236,7 +236,7 @@ volumeClaimTemplate:
 
 ```
 ## Install
-### install elasticsearch and kibana
+### Install elasticsearch and kibana
 ```
 helm install elasticsearch elastic/elasticsearch -f values-linode.yaml
 helm install kibana elastic/kibana
@@ -389,6 +389,9 @@ data:
 ```
 
 ## Search logs in ElasticSearch
+
+https://kibana.dev/app/dev_tools#/console
+
  ```
  GET /node-app-logs/_search
 {
