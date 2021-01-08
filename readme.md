@@ -1,3 +1,6 @@
+https://gitlab.com/nanuchi/efk-course-commands
+
+
 #### Install kubectl
 
 [installation guide Kubectl](https://v1-16.docs.kubernetes.io/docs/tasks/tools/install-kubectl/)
@@ -115,3 +118,287 @@ Repo has been deprecated - https://stackoverflow.com/a/57970816
 
 ##### install helm chart in a specific namespace (namespace must already exist)
     helm install elasticsearch elastic/elasticsearch -f values-linode.yaml -n elastic
+
+
+
+# EFK
+
+`Fluentd -> ElasticSearch -> Kbana`
+
+![efk](./png/efk.png)
+
+
+## K8s Dashboard
+
+install dashboard https://github.com/kubernetes/dashboard
+
+create sample user to get token
+
+https://github.com/kubernetes/dashboard/blob/master/docs/user/access-control/creating-sample-user.md
+
+```
+// https://github.com/kubernetes/dashboard/blob/master/aio/deploy/recommended.yaml
+// https://github.com/amliuyong/Docker_K8s/blob/main/multi-k8s/k8s-dashboard.yaml
+
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.1.0/aio/deploy/recommended.yaml
+kubectl proxy
+ ```
+http://localhost:8001/api/v1/namespaces/kubernetes-dashboard/services/https:kubernetes-dashboard:/proxy/.
+ 
+### create a user and get token
+```
+cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: admin-user
+  namespace: kubernetes-dashboard
+EOF
+
+
+cat <<EOF | kubectl apply -f -
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: admin-user
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: admin-user
+  namespace: kubernetes-dashboard
+EOF
+```
+```
+access dashboard
+kubectl proxy
+```
+http://localhost:8001/api/v1/namespaces/kubernetes-dashboard/services/https:kubernetes-dashboard:/proxy/.
+
+token for user admin-user
+```
+kubectl -n kubernetes-dashboard describe secret $(kubectl -n kubernetes-dashboard get secret | grep admin-user | awk '{print $1}')
+```
+
+## Pre install Config
+https://github.com/elastic/helm-charts
+
+
+### PV
+
+```yaml
+kind: PersistentVolume
+apiVersion: v1
+metadata:
+  name: es-data-holder
+  labels:
+    type: local
+spec:
+  storageClassName: hostpath
+  capacity:
+    storage: 5Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: /Users/dayong-mac/data
+
+```
+### config 
+- values-linode.yaml
+
+```yaml
+
+# Shrink default JVM heap.
+esJavaOpts: "-Xmx128m -Xms128m"
+replicas: 1
+minimumMasterNodes: 1
+antiAffinity: "soft"
+
+# Allocate smaller chunks of memory per pod.
+resources:
+  requests:
+    cpu: "100m"
+    memory: "512M"
+  limits:
+    cpu: "1000m"
+    memory: "512M"
+
+# Request smaller persistent volumes.
+volumeClaimTemplate:
+  accessModes: ["ReadWriteOnce"]
+  # storageClassName: "linode-block-storage"
+  storageClassName: hostpath
+  resources:
+    requests:
+      storage: 100M
+
+```
+## Install
+### install elasticsearch and kibana
+```
+helm install elasticsearch elastic/elasticsearch -f values-linode.yaml
+helm install kibana elastic/kibana
+
+kubectl port-forward deployment/kibana-kibana 5601
+
+```
+ http://127.0.0.1:5601/app/home#/
+
+### install ingress-nginx/ingress-nginx
+ ```
+helm repo add stable https://charts.helm.sh/stable 
+helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+
+helm install nginx-ingress ingress-nginx/ingress-nginx
+
+ ```
+
+###  kibana-ingress
+- kibana-ingress.yaml
+  
+```yaml
+apiVersion: extensions/v1beta1
+kind: Ingress
+
+metadata:
+  name: kibana-ingress
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    # nginx.ingress.kubernetes.io/use-regex: "true"
+
+spec:
+  rules:
+    - host: kibana.dev
+      http:
+        paths:
+          - path: /
+            backend:
+              serviceName: kibana-kibana
+              servicePort: 5601
+
+```
+
+https://kibana.dev/
+`thisisunsafe`
+
+
+
+
+### install Fluentd
+```
+helm repo add bitnami https://charts.bitnami.com/bitnami
+helm install fluentd bitnami/fluentd
+
+```
+#### Fluentd config map - fluentd-forwarder-cm
+
+```yaml
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: fluentd-forwarder-cm
+  namespace: default
+  labels:
+    app.kubernetes.io/component: forwarder
+    app.kubernetes.io/instance: fluentd
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: fluentd
+    helm.sh/chart: fluentd-1.3.0
+  annotations:
+    meta.helm.sh/release-name: fluentd
+    meta.helm.sh/release-namespace: default
+data:
+  fluentd.conf: |
+
+    # Ignore fluentd own events
+    <match fluent.**>
+        @type null
+    </match>
+
+    # HTTP input for the liveness and readiness probes
+    <source>
+        @type http
+        port 9880
+    </source>
+
+    # Throw the healthcheck to the standard output instead of forwarding it
+    <match fluentd.healthcheck>
+        @type null
+    </match>
+
+    # Get the logs from the containers running in the node
+    <source>
+      @type tail
+      path /var/log/containers/*-app*.log
+      pos_file /opt/bitnami/fluentd/logs/buffers/fluentd-docker.pos
+      tag kubernetes.*
+      read_from_head true
+      format json
+      time_format %Y-%m-%dT%H:%M:%S.%NZ
+    </source>
+
+    <filter **>
+      @type parser
+      key_name log
+      <parse>
+        @type multi_format
+        <pattern>
+          format json
+          time_key time
+          keep_time_key true
+        </pattern>
+      </parse>
+    </filter>
+
+    # enrich with kubernetes metadata
+    <filter kubernetes.**>
+        @type kubernetes_metadata
+    </filter>
+
+
+    <match kubernetes.var.log.containers.**java-app**.log>
+      @type elasticsearch
+      include_tag_key true
+      host "elasticsearch-master.default.svc.cluster.local"
+      port "9200"
+      index_name "java-app-logs"
+      <buffer>
+        @type file
+        path /opt/bitnami/fluentd/logs/buffers/java-logs.buffer
+        flush_thread_count 2
+        flush_interval 5s
+      </buffer>
+    </match>
+
+    <match kubernetes.var.log.containers.**node-app**.log>
+      @type elasticsearch
+      include_tag_key true
+      host "elasticsearch-master.default.svc.cluster.local"
+      port "9200"
+      index_name "node-app-logs"
+      <buffer>
+        @type file
+        path /opt/bitnami/fluentd/logs/buffers/node-logs.buffer
+        flush_thread_count 2
+        flush_interval 5s
+      </buffer>
+    </match>
+
+```
+
+## Search logs in ElasticSearch
+ ```
+ GET /node-app-logs/_search
+{
+  "query": {"match_all": {}}
+}
+
+
+GET /java-app-logs/_search
+{
+  "query": {"match_all": {}}
+}
+
+ ```
