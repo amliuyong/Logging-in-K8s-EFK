@@ -203,6 +203,7 @@ spec:
     - ReadWriteOnce
   hostPath:
     path: /Users/dayong-mac/data
+    type: DirectoryOrCreate
 
 ```
 ### config 
